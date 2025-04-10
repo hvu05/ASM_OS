@@ -158,11 +158,47 @@ int MEMPHY_get_freefp(struct memphy_struct *mp, int *retfpn)
    return 0;
 }
 
+
 int MEMPHY_dump(struct memphy_struct *mp)
 {
-  /*TODO dump memphy contnt mp->storage
-   *     for tracing the memory content
-   */
+   if (mp == NULL || mp->storage == NULL) {
+      printf("Error: Invalid memory or empty storage.\n");
+      return -1;
+   }
+
+    // In thông tin cơ bản về bộ nhớ vật lý
+   printf("Memory Dump (Physical Memory):\n");
+   printf("Max Size: %d\n", mp->maxsz);
+   printf("Cursor Position: %d\n", mp->cursor);
+   printf("Read/Write Flag: %d\n", mp->rdmflg);
+   
+    // Dump thông tin bộ nhớ vật lý (storage)
+   printf("\nMemory Content:\n");
+   for (int i = 0; i < mp->maxsz; i++) {
+        // In ra mỗi byte trong bộ nhớ dưới dạng hexadecimal
+      printf("Address %p: %02X\n", (mp->storage + i), mp->storage[i]);
+   }
+
+    // Dump danh sách các frame tự do (free_fp_list)
+   if (mp->free_fp_list != NULL) {
+      printf("\nFree Frame List:\n");
+      struct framephy_struct *fp = mp->free_fp_list;
+      while (fp != NULL) {
+            printf("Frame Address: %p, Frame Number: %d\n", fp, fp->fpn);
+            fp = fp->fp_next;
+      }
+   }
+
+    // Dump danh sách các frame đang sử dụng (used_fp_list)
+   if (mp->used_fp_list != NULL) {
+      printf("\nUsed Frame List:\n");
+      struct framephy_struct *fp = mp->used_fp_list;
+      while (fp != NULL) {
+            printf("Frame Address: %p, Frame Number: %d\n", fp, fp->fpn);
+            fp = fp->fp_next;
+      }
+   }
+
    return 0;
 }
 

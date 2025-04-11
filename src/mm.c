@@ -80,6 +80,7 @@ int pte_set_fpn(uint32_t *pte, int fpn)
 /*
  * vmap_page_range - map a range of page at aligned address
  */
+
 int vmap_page_range(struct pcb_t *caller,           // process call
   int addr,                       // start address which is aligned to pagesz
   int pgnum,                      // num of mapping page
@@ -89,25 +90,14 @@ int vmap_page_range(struct pcb_t *caller,           // process call
 //struct framephy_struct *fpit;
 int pgit = 0;
 int pgn = PAGING_PGN(addr);
-
-/* TODO: update the rg_end and rg_start of ret_rg 
-//ret_rg->rg_end =  ....
-//ret_rg->rg_start = ...
-//ret_rg->vmaid = ...
-*/
 ret_rg->rg_start = addr;
 ret_rg->rg_end = addr + pgnum * PAGING_PAGESZ;
-
-/* TODO map range of frame to address space
-*      [addr to addr + pgnum*PAGING_PAGESZ
-*      in page table caller->mm->pgd[]
-*/
-
 /* Tracking for later page replacement activities (if needed)
 * Enqueue new usage page */
 // enlist_pgn_node(&caller->mm->fifo_pgn, pgn + pgit);
 struct framephy_struct *fpit = frames;
-for (pgit = 0; pgit < pgnum; pgit++) {
+//for (pgit = 0; pgit < pgnum; pgit++) {
+for (pgit = pgnum - 1 ; pgit >= 0; pgit--) {
 if (fpit == NULL) break; // Tránh lỗi nếu hết frame trước khi ánh xạ xong
 
 // Lưu thông tin vào bảng trang
@@ -116,7 +106,6 @@ pte_set_fpn(pte, fpit->fpn); // Thiết lập số hiệu khung trang vào PTE
 
 // Ghi nhận trang vào danh sách FIFO (dùng cho thay thế trang sau này)
 enlist_pgn_node(&caller->mm->fifo_pgn, pgn + pgit);
-
 // Chuyển đến frame tiếp theo
 fpit = fpit->fp_next;
 }
@@ -263,7 +252,7 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
 {
   struct vm_area_struct *vma0 = malloc(sizeof(struct vm_area_struct));
 
-  mm->pgd = malloc(PAGING_MAX_PGN * sizeof(uint32_t));
+  mm->pgd = calloc(PAGING_MAX_PGN, sizeof(uint32_t));
 
   /* By default the owner comes with at least one vma */
   vma0->vm_id = 0;

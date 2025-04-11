@@ -81,6 +81,45 @@ int pte_set_fpn(uint32_t *pte, int fpn)
  * vmap_page_range - map a range of page at aligned address
  */
 
+ /* get the first layer index */
+static addr_t get_first_lv(addr_t addr) {
+	return addr >> (8 + PAGE_LEN);
+}
+
+/* get the second layer index */
+static addr_t get_second_lv(addr_t addr) {
+  return (addr >> 8) & ((1 << PAGE_LEN) - 1);
+}
+
+int add_page_table_entry(struct page_table_t *page_table, addr_t v_index, addr_t p_index, addr_t address){
+  addr_t first_lv = get_first_lv(address);
+  addr_t second_lv = get_second_lv(address);
+  struct trans_table_t* second_tab = NULL;
+  for (int i = 0; i < page_table->size; i++){
+    if (first_lv == page_table->table[i].v_index){
+      second_tab = page_table->table[i].next_lv;
+      break;
+    }   
+  }
+
+  if (second_tab == NULL){
+    second_tab = calloc(1, sizeof(struct trans_table_t));
+    if (second_tab == NULL)
+      return -1;
+    second_tab->size = 0;
+    page_table->size++;
+    page_table->table[page_table->size - 1].v_index = first_lv;
+    page_table->table[page_table->size - 1].next_lv = second_tab;
+  }
+
+  if (second_lv < 0 || second_lv >= (1 << SECOND_LV_LEN))
+    return -1;
+  second_tab->table[second_lv].p_index = p_index;
+  second_tab->table[second_lv].v_index = v_index;
+  second_tab->size++;
+  return 0;
+}
+
 int vmap_page_range(struct pcb_t *caller,           // process call
   int addr,                       // start address which is aligned to pagesz
   int pgnum,                      // num of mapping page
@@ -106,6 +145,9 @@ pte_set_fpn(pte, fpit->fpn); // Thiết lập số hiệu khung trang vào PTE
 
 // Ghi nhận trang vào danh sách FIFO (dùng cho thay thế trang sau này)
 enlist_pgn_node(&caller->mm->fifo_pgn, pgn + pgit);
+
+addr_t curr_vaddr = addr + pgit * PAGING_PAGESZ;
+add_page_table_entry(caller->page_table, pgn + pgit, fpit->fpn, curr_vaddr);
 // Chuyển đến frame tiếp theo
 fpit = fpit->fp_next;
 }

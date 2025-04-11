@@ -23,6 +23,7 @@
 #include <pthread.h>
 
 static pthread_mutex_t mmvm_lock = PTHREAD_MUTEX_INITIALIZER;
+uint32_t read_addr;
 
 /*enlist_vm_freerg_list - add new rg to freerg_list
  *@mm: memory region
@@ -149,11 +150,36 @@ int __free(struct pcb_t *caller, int vmaid, int rgid) {
  *@size: allocated size
  *@reg_index: memory region ID (used to identify variable in symbole table)
  */
+
+int pte_is_valid(uint32_t pte) {
+  return (pte >> 31) & 0x1;
+}
+
+ void print_page_frame_mapping(uint32_t *pgd) {
+  for (int i = 0; i < PAGING_MAX_PGN; i++) {
+      uint32_t pte = pgd[i];
+      if (pte_is_valid(pte)) {
+          int frame_number = PAGING_FPN(pte);
+          printf("Page Number: %d -> Frame Number: %d\n", i, frame_number);
+      }
+  }
+}
 int liballoc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 {
   int addr;
+  int result = __alloc(proc, 0, reg_index, size, &addr);
   /* By default using vmaid = 0 */
-  return __alloc(proc, 0, reg_index, size, &addr);
+  #ifdef IODUMP
+  printf("===== PHYSICAL MEMORY AFTER ALLOCATION =====\n");
+  printf("PID=%d - Region=%d - Address=%08X - Size=%d byte\n", proc->pid , reg_index, addr, size);
+  #ifdef PAGETBL_DUMP
+  print_pgtbl(proc, 0, -1); //print max TBL
+  #endif
+  print_page_frame_mapping(proc->mm->pgd);
+  printf("================================================================\n");
+  #endif
+
+  return result;
 }
 
 /*libfree - PAGING-based free a region memory
@@ -165,6 +191,16 @@ int liballoc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 int libfree(struct pcb_t *proc, uint32_t reg_index)
 {
   /* By default using vmaid = 0 */
+  #ifdef IODUMP
+  printf("===== PHYSICAL MEMORY AFTER DEALLOCATION =====\n");
+  printf("PID=%d - Region=%d\n", proc->pid , reg_index);
+  #ifdef PAGETBL_DUMP
+  print_pgtbl(proc, 0, -1); //print max TBL
+  #endif
+  print_page_frame_mapping(proc->mm->pgd);
+  printf("================================================================\n");
+  #endif
+
   return __free(proc, 0, reg_index);
 }
 
@@ -257,6 +293,7 @@ int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller)
     int off = PAGING_OFFST(addr);  // Tính toán offset trong trang
     int phyaddr = (fpn * PAGING_PAGESZ) + off;  // Tính địa chỉ vật lý
 
+    //printf("[ADDR] pgn=%d fpn=%d off=%d phyaddr=%d\n", pgn, fpn, off, phyaddr);
     /* Đọc dữ liệu từ bộ nhớ vật lý */
     struct sc_regs regs;
     regs.a1 = SYSMEM_IO_READ;  // Mã lệnh yêu cầu đọc bộ nhớ
@@ -266,7 +303,7 @@ int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller)
 
     // Sau khi syscall, giá trị đã được lưu vào regs.a3, giờ chúng ta lưu vào `data`
     *data = (BYTE)regs.a3;  // Cập nhật dữ liệu vào biến data
-
+    read_addr = addr;
     pthread_mutex_unlock(&mmvm_lock);
     return 0;  // Thành công
 }
@@ -332,6 +369,7 @@ int libread(
     uint32_t offset,    // Source address = [source] + [offset]
     uint32_t* destination)
 {
+
   BYTE data;
   int val = __read(proc, 0, source, offset, &data);
 
@@ -342,10 +380,13 @@ int libread(
   // Nếu không có lỗi, cập nhật kết quả vào destination
   *destination = (uint32_t)data;
 #ifdef IODUMP
+  printf("===== PHYSICAL MEMORY AFTER READING =====\n");
   printf("read region=%d offset=%d value=%d\n", source, offset, data);
 #ifdef PAGETBL_DUMP
   print_pgtbl(proc, 0, -1); //print max TBL
 #endif
+  print_page_frame_mapping(proc->mm->pgd);
+  printf("================================================================\n");
   MEMPHY_dump(proc->mram);
 #endif
   return val;
@@ -379,15 +420,19 @@ int libwrite(
     uint32_t destination, // Index of destination register
     uint32_t offset)
 {
+  int val = __write(proc, 0, destination, offset, data);
 #ifdef IODUMP
+  printf("===== PHYSICAL MEMORY AFTER WRITING =====\n");
   printf("write region=%d offset=%d value=%d\n", destination, offset, data);
 #ifdef PAGETBL_DUMP
   print_pgtbl(proc, 0, -1); //print max TBL
 #endif
+  print_page_frame_mapping(proc->mm->pgd);
+  printf("================================================================\n");
   MEMPHY_dump(proc->mram);
 #endif
 
-  return __write(proc, 0, destination, offset, data);
+  return val;
 }
 
 /*free_pcb_memphy - collect all memphy of pcb
